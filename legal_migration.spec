@@ -25,12 +25,23 @@ hiddenimports += ["pytesseract", "pdf2image", "PIL", "dateutil", "openpyxl"]
 hiddenimports += collect_submodules("legal_pipeline")
 datas += collect_data_files("sklearn")
 
+# --- AV-friendly metadata: embed version resource + icon when present --------
 _version = "version_info.txt" if os.path.exists(os.path.join(here, "version_info.txt")) else None
+if _version:
+    print("[spec] Embedding version metadata from version_info.txt")
+else:
+    print("[spec] version_info.txt NOT found -> exe will have NO version metadata "
+          "(more likely to trigger AV false positives). Add version_info.txt.")
+
 _icon = None
 for _cand in ("app.ico", "app_icon.ico"):
     if os.path.exists(os.path.join(here, _cand)):
         _icon = os.path.join(here, _cand)
         break
+if _icon:
+    print(f"[spec] Using application icon: {_icon}")
+else:
+    print("[spec] No app.ico found -> building without a custom icon (optional).")
 
 a = Analysis(
     ["app_gui.py"],
@@ -52,9 +63,9 @@ exe = EXE(
     exclude_binaries=True,
     name="LegalDocMigration",
     console=False,
-    upx=False,
+    upx=False,          # keep OFF — see hardening notes at top of file
     icon=_icon,
-    version=_version,
+    version=_version,   # embeds version_info.txt when present
 )
 
 coll = COLLECT(
@@ -62,6 +73,6 @@ coll = COLLECT(
     a.binaries,
     a.zipfiles,
     a.datas,
-    upx=False,
+    upx=False,          # keep OFF — see hardening notes at top of file
     name="LegalDocMigration",
 )
