@@ -1,0 +1,78 @@
+name: Build Windows EXE (with OCR bundled)
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -r requirements-dev.txt
+          python -m pip install pyinstaller
+
+      # OCR toolchain for the test suite's OCR path. If these fail, the
+      # OCR-dependent test SKIPS itself (it detects OCR availability), so the
+      # build is never blocked for an environment reason.
+      - name: Install Tesseract (for OCR tests)
+        run: choco install --no-progress -y tesseract
+        continue-on-error: true
+
+      - name: Install Poppler (for OCR tests)
+        run: choco install --no-progress -y poppler
+        continue-on-error: true
+
+      - name: Refresh PATH so choco tools are visible to tests
+        shell: pwsh
+        run: |
+          $machine = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+          $user = [System.Environment]::GetEnvironmentVariable("Path", "User")
+          "PATH=$machine;$user" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Run tests
+        run: python -m pytest tests -v --timeout=300
+
+      - name: Download bundled OCR helpers into vendor\
+        shell: cmd
+        run: call get_ocr_helpers.bat
+        continue-on-error: true
+
+      - name: Build EXE
+        run: python -m PyInstaller legal_migration.spec --noconfirm --clean
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LegalDocMigration-Windows
+          path: dist/LegalDocMigration/**
+
+      - name: Package release zip (on tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: Compress-Archive -Path dist/LegalDocMigration/* -DestinationPath LegalDocMigration-Windows.zip -Force
+
+      - name: Publish Release asset (on tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: LegalDocMigration-Windows.zip
